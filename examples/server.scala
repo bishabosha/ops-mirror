@@ -1,5 +1,10 @@
+package serverlib
+
+import mirrorops.{OpsMirror, Operation}
+
 import quoted.*
-case class get(route: String) extends scala.annotation.Annotation
+
+case class get(route: String) extends scala.annotation.RefiningAnnotation
 
 trait Model[T]:
   val services: List[Service]
@@ -9,7 +14,7 @@ case class Service(route: get)
 object Model:
   inline def derived[T]: Model[T] = ${ derivedImpl[T] }
 
-  def derivedImpl[T: Type](using Quotes): Expr[Model[T]] =
+  private def derivedImpl[T: Type](using Quotes): Expr[Model[T]] =
     import quotes.reflect.*
 
     val mirror: Expr[OpsMirror.Of[T]] = Expr.summon[OpsMirror.Of[T]].get
@@ -18,31 +23,24 @@ object Model:
       case '[op *: ts] => extractService[op] :: extractServices[ts]
       case '[EmptyTuple] => Nil
 
-    def extractService[O: Type]: Expr[Service] = Type.of[O] match
-      case '[Operation { type Metadata = meta }] =>
-        TypeRepr.of[meta] match
-          case AnnotatedType(_, annot) =>
-            '{ Service(${annot.asExprOf[get]}) }
+    def extractService[Op: Type]: Expr[Service] =
+      val metas = OpsMirror.metadata[Op]
+      val route = metas.collectFirst {
+        case '{ $g: serverlib.get } => g
+      }
+      route match
+        case Some(r) => '{ Service($r) }
+        case None => report.errorAndAbort(s"got the metadata elems ${metas.map(_.show)}")
+
 
     val servicesExpr = mirror match
-      case '{ $m: OpsMirror.Of[T] { type MirroredOperations } } =>
-        report.error("got the mirror" + m.show)
-        // Expr.ofList(extractServices[mirroredOps])
-    '{
-      new Model[T] {
-        val services = Nil// $servicesExpr
-      }
-    }
+      case '{ $m: OpsMirror.Of[T] { type MirroredOperations = mirroredOps } } =>
+        Expr.ofList(extractServices[mirroredOps])
 
-  // type Mirror = OpsMirror:
-  //   type MirroredType = HelloService
-  //   type MirroredLabel = "HelloService"
-  //   type MirroredOperations = (
-  //     Operation {
-  //       type Metadata = Any @get("/hello/:name")
-  //       type InputTypes = String *: EmptyTuple
-  //       type InputLabels = "name" *: EmptyTuple
-  //       type Output = String
-  //     }
-  //   ) *: EmptyTuple
-  //   type MirroredOperationLabels = "hello" *: EmptyTuple
+    ('{
+      new Model[T] {
+        val services = $servicesExpr
+      }
+    })
+  end derivedImpl
+end Model

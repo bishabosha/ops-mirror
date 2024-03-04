@@ -1,10 +1,14 @@
+package mirrorops
+
 import quoted.*
-import scala.collection.immutable.Stream.Cons
 
 trait OpsMirror:
   type MirroredType
   type MirroredLabel
+  type MirroredOperations
   type MirroredOperationLabels
+
+sealed trait Meta
 
 trait Operation:
   type Metadata <: Tuple
@@ -17,13 +21,29 @@ object OpsMirror:
 
   transparent inline given reify[T]: Of[T] = ${ reifyImpl[T] }
 
-  def reifyImpl[T: Type](using Quotes): Expr[Of[T]] =
+  def metadata[Op: Type](using Quotes): List[Expr[Any]] =
+    import quotes.reflect.*
+
+    def extractMetas[Metadata: Type]: List[Expr[Any]] = Type.of[Metadata] match
+      case '[m *: ms] => extractMeta[m]  :: extractMetas[ms]
+      case '[EmptyTuple] => Nil
+
+    def extractMeta[M: Type]: Expr[Any] = TypeRepr.of[M] match
+      case AnnotatedType(_, annot) =>
+        annot.asExpr
+      case tpe =>
+        report.errorAndAbort(s"got the metadata element ${tpe.show}")
+
+    Type.of[Op] match
+      case '[Operation { type Metadata = metadata }] => extractMetas[metadata]
+      case _ => report.errorAndAbort("expected an Operation with Metadata.")
+
+  private def reifyImpl[T: Type](using Quotes): Expr[Of[T]] =
     import quotes.reflect.*
 
     def toTuple(list: List[Type[?]]): Type[?] = list match
       case '[t] :: ts => toTuple(ts) match
-        case '[ts] => AppliedType(TypeRepr.of[*:], List(TypeRepr.of[t], TypeRepr.of[ts])).asType
-
+        case '[type ts <: Tuple; ts] => Type.of[t *: ts]
       case _ => Type.of[EmptyTuple]
 
     val tpe = TypeRepr.of[T]
@@ -31,9 +51,9 @@ object OpsMirror:
     val decls = cls.declaredMethods
     val labels = decls.map(m => ConstantType(StringConstant(m.name)))
     val ops = decls.map(method =>
-      val meta = method.annotations.foldLeft(TypeRepr.of[Any]) { (acc, annot) =>
-        AnnotatedType(acc, annot)
-      }.asType
+      val meta = toTuple(method.annotations.map(annot =>
+        AnnotatedType(TypeRepr.of[Meta], annot).asType
+      ))
       val inputTypes = tpe.memberType(method).asInstanceOf[MethodType].paramTypes
       val inputLabels = tpe.memberType(method).asInstanceOf[MethodType].paramNames
         .map(l => ConstantType(StringConstant(l)))

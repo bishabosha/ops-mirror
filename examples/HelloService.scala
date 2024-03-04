@@ -1,6 +1,11 @@
-trait HelloService:
-  @get("/hello/:name")
+package app
+
+import serverlib.{Model, get}
+
+trait HelloService derives Model:
+  @get("/hello/{name}")
   def hello(name: String): String
 
-object HelloService:
-  val g = Model.derived[HelloService]
+@main def run =
+  val m = summon[Model[HelloService]]
+  m.services.foreach(println(_))
