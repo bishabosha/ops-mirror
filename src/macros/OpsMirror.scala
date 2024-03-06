@@ -18,14 +18,13 @@ trait Operation:
   type InputLabels <: Tuple
   type InputMetadatas <: Tuple
   type OutputType
-  type OutputMetadata <: Tuple
 
 object OpsMirror:
   type Of[T] = OpsMirror { type MirroredType = T }
 
   transparent inline given reify[T]: Of[T] = ${ reifyImpl[T] }
 
-  case class Metadata(base: List[Expr[Any]], inputs: List[List[Expr[Any]]], output: List[Expr[Any]])
+  case class Metadata(base: List[Expr[Any]], inputs: List[List[Expr[Any]]])
 
   def metadata[Op: Type](using Quotes): Metadata =
     import quotes.reflect.*
@@ -35,7 +34,7 @@ object OpsMirror:
       case '[EmptyTuple] => Nil
 
     def extractMetas[Metadata: Type]: List[Expr[Any]] = Type.of[Metadata] match
-      case '[m *: ms] => extractMeta[m]  :: extractMetas[ms]
+      case '[m *: ms] => extractMeta[m] :: extractMetas[ms]
       case '[EmptyTuple] => Nil
 
     def extractMeta[M: Type]: Expr[Any] = TypeRepr.of[M] match
@@ -48,8 +47,7 @@ object OpsMirror:
       case '[Operation {
         type Metadata = metadata
         type InputMetadatas = inputMetadatas
-        type OutputMetadata = outputMetadata
-      }] => Metadata(extractMetas[metadata], extractMetass[inputMetadatas], extractMetas[outputMetadata])
+      }] => Metadata(extractMetas[metadata], extractMetass[inputMetadatas])
       case _ => report.errorAndAbort("expected an Operation with Metadata.")
 
   private def reifyImpl[T: Type](using Quotes): Expr[Of[T]] =
@@ -68,30 +66,22 @@ object OpsMirror:
     def encodeMeta(annot: Term): Type[?] =
       AnnotatedType(TypeRepr.of[Meta], annot).asType
 
-    def collectAnnotations(tpe: TypeRepr, acc: List[Type[?]] = Nil): (Type[?], List[Type[?]]) = tpe match
-      case AnnotatedType(tpe, annot) => collectAnnotations(tpe, encodeMeta(annot) :: acc)
-      case tpe => (tpe.asType, acc)
-
     val ops = decls.map(method =>
       val meta = toTuple(method.annotations.map(encodeMeta))
-      val (inputTypes, inputMetas) =
-        tpe.memberType(method).asInstanceOf[MethodType].paramTypes.map(collectAnnotations(_)).unzip
-      val inputLabels = tpe.memberType(method).asInstanceOf[MethodType].paramNames
-        .map(l => ConstantType(StringConstant(l)).asType)
-      val (output, outputMeta) =
-        tpe.memberType(method).asInstanceOf[MethodType].resType.pipe(collectAnnotations(_))
+      val methodType = tpe.memberType(method).asInstanceOf[MethodType]
+      val inputTypes = methodType.paramTypes.map(_.asType)
+      val inputLabels = methodType.paramNames.map(l => ConstantType(StringConstant(l)).asType)
+      val output = tpe.memberType(method).asInstanceOf[MethodType].resType.asType
       val inTup = toTuple(inputTypes)
       val inLab = toTuple(inputLabels)
-      val inMet = toTuple(inputMetas.map(toTuple))
-      val outMet = toTuple(outputMeta)
-      (meta, inTup, inLab, inMet, output, outMet) match
-        case ('[m], '[i], '[l], '[iM], '[o], '[oM]) => Type.of[Operation {
+      val inMet = toTuple(method.paramSymss.head.map(s => toTuple(s.annotations.map(encodeMeta))))
+      (meta, inTup, inLab, inMet, output) match
+        case ('[m], '[i], '[l], '[iM], '[o]) => Type.of[Operation {
           type Metadata = m
           type InputTypes = i
           type InputLabels = l
           type InputMetadatas = iM
           type OutputType = o
-          type OutputMetadata = oM
         }]
 
     )
