@@ -1,13 +1,13 @@
 package serverlib
 
 import quoted.*
-import mirrorops.OpsMirror
+import mirrorops.{OpsMirror, MetaAnnotation}
 
-case class get(route: String) extends scala.annotation.RefiningAnnotation
+case class get(route: String) extends MetaAnnotation
 
 sealed trait Source
 
-case class path() extends scala.annotation.RefiningAnnotation with Source
+case class path() extends MetaAnnotation with Source
 
 trait Model[T]:
   val services: List[Service]

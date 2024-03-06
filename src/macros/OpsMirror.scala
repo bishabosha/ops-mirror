@@ -3,7 +3,9 @@ package mirrorops
 import quoted.*
 
 import scala.util.chaining.given
+import scala.annotation.implicitNotFound
 
+@implicitNotFound("No OpsMirror could be generated.\nDiagnose any issues by calling OpsMirror.reify[T] directly")
 trait OpsMirror:
   type MirroredType
   type MirroredLabel
@@ -11,6 +13,8 @@ trait OpsMirror:
   type MirroredOperationLabels
 
 sealed trait Meta
+
+open class MetaAnnotation extends scala.annotation.RefiningAnnotation
 
 trait Operation:
   type Metadata <: Tuple
@@ -64,7 +68,11 @@ object OpsMirror:
     val labels = decls.map(m => ConstantType(StringConstant(m.name)))
 
     def encodeMeta(annot: Term): Type[?] =
-      AnnotatedType(TypeRepr.of[Meta], annot).asType
+      if annot.tpe <:< TypeRepr.of[MetaAnnotation] then
+        AnnotatedType(TypeRepr.of[Meta], annot).asType
+      else
+        report.error(s"annotation ${annot.show} does not extend ${Type.show[MetaAnnotation]}", annot.pos)
+        Type.of[Meta]
 
     val ops = decls.map(method =>
       val meta = toTuple(method.annotations.map(encodeMeta))
