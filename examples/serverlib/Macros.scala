@@ -1,33 +1,13 @@
 package serverlib
 
+import scala.quoted.*
 import mirrorops.{OpsMirror, Operation}
 
-import quoted.*
 import scala.util.chaining.given
 
-case class get(route: String) extends scala.annotation.RefiningAnnotation
-
-sealed trait Source
-
-case class path() extends scala.annotation.RefiningAnnotation with Source
-
-trait Model[T]:
-  val services: List[Service]
-
-case class Input(label: String, tpe: Tag[?], source: Source)
-
-case class Service(route: get, inputs: Seq[Input], output: Tag[?])
-
-enum Tag[T]:
-  case String extends Tag[String]
-
-object Model:
-  inline def derived[T]: Model[T] = ${ derivedImpl[T] }
-
-  private def derivedImpl[T: Type](using Quotes): Expr[Model[T]] =
+object Macros:
+  def derivedImpl[T: Type](mirror: Expr[OpsMirror.Of[T]])(using Quotes): Expr[Model[T]] =
     import quotes.reflect.*
-
-    val mirror: Expr[OpsMirror.Of[T]] = Expr.summon[OpsMirror.Of[T]].get
 
     def extractInputs[Ts: Type]: List[Expr[Tag[?]]] = Type.of[Ts] match
       case '[op *: ts] => extractInput[op] :: extractInputs[ts]
@@ -75,4 +55,3 @@ object Model:
       }
     })
   end derivedImpl
-end Model
