@@ -1,13 +1,26 @@
 package app
 
-import serverlib.*
+import serverlib.*, source.*, method.*
 
 trait HelloService derives Model:
   @get("/hello/{name}")
   def hello(@path name: String): String
 
-@main def run =
-  val mm = mirrorops.OpsMirror.reify[app.HelloService]
+  @post("/greeting/{name}")
+  def setGreeting(@path name: String, @body greeting: String): Unit
 
-  val m = summon[Model[HelloService]] // TODO: make 'selectable' so you can bind handlers
-  m.services.foreach(println(_))
+  @post("/year")
+  def getYear: Int
+
+@main def demo =
+  val mm = summon[mirrorops.OpsMirror.Of[HelloService]]
+
+  val e = Endpoints.of[HelloService]
+
+  e.model.services.foreach((k, s) => println(s"$k: $s"))
+
+  e.hello.handle(name => s"Hello, $name")
+  e.getYear.handle(() => 2021)
+  e.setGreeting.handle((name, greeting) => println(s"$greeting, $name"))
+
+

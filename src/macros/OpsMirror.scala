@@ -6,7 +6,7 @@ import scala.util.chaining.given
 import scala.annotation.implicitNotFound
 
 @implicitNotFound("No OpsMirror could be generated.\nDiagnose any issues by calling OpsMirror.reify[T] directly")
-trait OpsMirror:
+sealed trait OpsMirror:
   type MirroredType
   type MirroredLabel
   type MirroredOperations
@@ -16,7 +16,7 @@ sealed trait Meta
 
 open class MetaAnnotation extends scala.annotation.RefiningAnnotation
 
-trait Operation:
+sealed trait Operation:
   type Metadata <: Tuple
   type InputTypes <: Tuple
   type InputLabels <: Tuple
@@ -76,13 +76,23 @@ object OpsMirror:
 
     val ops = decls.map(method =>
       val meta = toTuple(method.annotations.map(encodeMeta))
-      val methodType = tpe.memberType(method).asInstanceOf[MethodType]
-      val inputTypes = methodType.paramTypes.map(_.asType)
-      val inputLabels = methodType.paramNames.map(l => ConstantType(StringConstant(l)).asType)
-      val output = tpe.memberType(method).asInstanceOf[MethodType].resType.asType
+      val (inputTypes, inputLabels, inputMetas, output) =
+        tpe.memberType(method) match
+          case ByNameType(res) =>
+            (Nil, Nil, Nil, res.asType)
+          case MethodType(paramNames, paramTpes, res) =>
+            val inputTypes = paramTpes.map(_.asType)
+            val inputLabels = paramNames.map(l => ConstantType(StringConstant(l)).asType)
+            val inputMetas = method.paramSymss.head.map(s => toTuple(s.annotations.map(encodeMeta)))
+            val output = res match
+              case _: MethodType => report.errorAndAbort(s"curried method ${method.name} is not supported")
+              case _: PolyType => report.errorAndAbort(s"curried method ${method.name} is not supported")
+              case _ => res.asType
+            (inputTypes, inputLabels, inputMetas, output)
+          case _: PolyType => report.errorAndAbort(s"generic method ${method.name} is not supported")
       val inTup = toTuple(inputTypes)
       val inLab = toTuple(inputLabels)
-      val inMet = toTuple(method.paramSymss.head.map(s => toTuple(s.annotations.map(encodeMeta))))
+      val inMet = toTuple(inputMetas)
       (meta, inTup, inLab, inMet, output) match
         case ('[m], '[i], '[l], '[iM], '[o]) => Type.of[Operation {
           type Metadata = m
