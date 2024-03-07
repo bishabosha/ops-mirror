@@ -7,10 +7,12 @@ import com.sun.net.httpserver.HttpServer
 import java.util.concurrent.Executors
 import scala.collection.mutable.ListBuffer
 
+import serverlib.HttpService.Empty
 import serverlib.Endpoints.Endpoint
 import scala.util.TupledFunction
 
 import serverlib.util.optional
+import scala.collection.View.Empty
 
 class Server private (private val internal: HttpServer) extends AutoCloseable:
   def close(): Unit = internal.stop(0)
@@ -22,26 +24,38 @@ object Server:
 
   type UriHandler = String => Option[Map[String, String]]
 
-  type Func[I <: Tuple, O] = I match
-    case EmptyTuple => () => O
-    case a *: EmptyTuple => a => O
-    case (a, b) => (a, b) => O
+  type Func[I <: Tuple, E, O] = I match
+    case EmptyTuple => () => Res[E, O]
+    case a *: EmptyTuple => a => Res[E, O]
+    case (a, b) => (a, b) => Res[E, O]
 
-  trait Exchanger[I <: Tuple, O](using Ser[O]):
-    def apply(bundle: Bundle, func: Func[I, O]): Option[Array[Byte]]
+  type Res[E, O] = E match
+    case Empty => O
+    case _ => Either[E, O]
+
+  trait Exchanger[I <: Tuple, E, O](using Ser[Res[E, O]]):
+    def apply(bundle: Bundle, func: Func[I, E, O]): Ser.Result
 
   trait Ser[O]:
-    def serialize(o: O): Option[Array[Byte]]
+    def serialize(o: O): Ser.Result
 
   object Ser:
+    type Result = Either[Option[Array[Byte]], Option[Array[Byte]]]
+
+    given [E: Ser, O: Ser]: Ser[Either[E, O]] with
+      def serialize(o: Either[E, O]): Result = o.fold(
+        e => Left(summon[Ser[E]].serialize(e).merge),
+        o => Right(summon[Ser[O]].serialize(o).merge)
+      )
+
     given Ser[Unit] with
-      def serialize(o: Unit): Option[Array[Byte]] = None
+      def serialize(o: Unit): Result = Right(None)
 
     given Ser[String] with
-      def serialize(o: String): Option[Array[Byte]] = Some(o.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+      def serialize(o: String): Result = Right(Some(o.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
 
     given Ser[Int] with
-      def serialize(o: Int): Option[Array[Byte]] = Some(o.toString.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+      def serialize(o: Int): Result = Right(Some(o.toString.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
 
   trait Des[I]:
     def deserialize(str: String): I
@@ -54,28 +68,28 @@ object Server:
       def deserialize(str: String): String = str
 
   object Exchanger:
-    inline given [I <: Tuple, O](using Ser[O]): Exchanger[I, O] = new Exchanger[I, O]:
-      def apply(bundle: Bundle, func: Func[I, O]): Option[Array[Byte]] =
+    inline given [I <: Tuple, E, O](using Ser[Res[E, O]]): Exchanger[I, E, O] = new Exchanger[I, E, O]:
+      def apply(bundle: Bundle, func: Func[I, E, O]): Ser.Result =
         val res =
           inline compiletime.erasedValue[I] match
-            case _: EmptyTuple => func.asInstanceOf[() => O]()
+            case _: EmptyTuple => func.asInstanceOf[() => Res[E, O]]()
             case _: (a *: EmptyTuple) =>
               val dA = compiletime.summonInline[Des[a]]
-              func.asInstanceOf[a => O](dA.deserialize(bundle.arg(0)))
+              func.asInstanceOf[a => Res[E, O]](dA.deserialize(bundle.arg(0)))
             case _: (a, b) =>
               val dA = compiletime.summonInline[Des[a]]
               val dB = compiletime.summonInline[Des[b]]
-              func.asInstanceOf[(a, b) => O](dA.deserialize(bundle.arg(0)), dB.deserialize(bundle.arg(1)))
-        summon[Ser[O]].serialize(res)
+              func.asInstanceOf[(a, b) => Res[E, O]](dA.deserialize(bundle.arg(0)), dB.deserialize(bundle.arg(1)))
+        summon[Ser[Res[E, O]]].serialize(res)
 
   trait Bundle:
     def arg(index: Int): String
 
-  extension [I <: Tuple, O](e: Endpoint[I, O])
-    def handle(op: Func[I, O])(using Exchanger[I, O]): Handler[I, O] =
-      Handler[I, O](e, op, summon[Exchanger[I, O]])
+  extension [I <: Tuple, E, O](e: Endpoint[I, E, O])
+    def handle(op: Func[I, E, O])(using Exchanger[I, E, O]): Handler[I, E, O] =
+      Handler[I, E, O](e, op, summon[Exchanger[I, E, O]])
 
-  private def rootHandler(handlers: List[Handler[?, ?]]): HttpHandler =
+  private def rootHandler(handlers: List[Handler[?, ?, ?]]): HttpHandler =
     val lazyHandlers = handlers.to(LazyList)
       .map: h =>
         val (method, uriHandler) = h.route
@@ -123,24 +137,34 @@ object Server:
           } finally bis.close()
         } finally is.close()
 
-      handlerOpt match
+      try handlerOpt match
         case None =>
           exchange.sendResponseHeaders(404, -1)
-          exchange.close()
         case Some((handler, params)) =>
           val body = readBody()
           val bodyStr = new String(body, java.nio.charset.StandardCharsets.UTF_8)
           println(s"matched ${uri} to handler ${handler.debug} with params ${params}\nbody: ${bodyStr}")
 
           handler.exchange(params, bodyStr) match
-            case None =>
-              exchange.sendResponseHeaders(200, -1)
-            case Some(response) =>
-              exchange.sendResponseHeaders(200, response.length)
-              exchange.getResponseBody.write(response)
-              exchange.close()
+            case Left(errExchange) =>
+              // TODO: in real world you would encode the data type to the error format
+              errExchange match
+                case None =>
+                  exchange.sendResponseHeaders(500, -1)
+                case Some(response) =>
+                  exchange.sendResponseHeaders(500, response.length)
+                  exchange.getResponseBody.write(response)
+            case Right(response) =>
+              response match
+                case None =>
+                  exchange.sendResponseHeaders(200, -1)
+                case Some(response) =>
+                  exchange.sendResponseHeaders(200, response.length)
+                  exchange.getResponseBody.write(response)
+      finally
+        exchange.close()
 
-  class Handler[I <: Tuple, O](e: Endpoint[I, O], op: Func[I, O], exchange: Exchanger[I, O]):
+  class Handler[I <: Tuple, E, O](e: Endpoint[I, E, O], op: Func[I, E, O], exchange: Exchanger[I, E, O]):
     import serverlib.HttpService.model.*
     import serverlib.HttpService.Tag
 
@@ -161,7 +185,7 @@ object Server:
         new:
           def arg(index: Int): String = readers(index)(params, body)
 
-    def exchange(params: Map[String, String], body: String): Option[Array[Byte]] =
+    def exchange(params: Map[String, String], body: String): Ser.Result =
       val bundle = template(params, body)
       exchange(bundle, op)
 
@@ -201,9 +225,9 @@ object Server:
       case method.put(route) => (HttpMethod.Put, uriHandle(route))
 
   class ServerBuilder():
-    private val handlers: ListBuffer[Handler[?, ?]] = ListBuffer()
+    private val handlers: ListBuffer[Handler[?, ?, ?]] = ListBuffer()
 
-    def addEndpoint[I <: Tuple, O](handler: Handler[I, O]): this.type =
+    def addEndpoint[I <: Tuple, E, O](handler: Handler[I, E, O]): this.type =
       handlers += handler
       this
 

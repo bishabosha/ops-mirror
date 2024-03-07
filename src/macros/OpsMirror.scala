@@ -14,6 +14,8 @@ sealed trait OpsMirror:
 
 sealed trait Meta
 
+sealed trait VoidType
+
 open class MetaAnnotation extends scala.annotation.RefiningAnnotation
 
 sealed trait Operation:
@@ -21,6 +23,7 @@ sealed trait Operation:
   type InputTypes <: Tuple
   type InputLabels <: Tuple
   type InputMetadatas <: Tuple
+  type ErrorType
   type OutputType
 
 object OpsMirror:
@@ -30,22 +33,30 @@ object OpsMirror:
 
   case class Metadata(base: List[Expr[Any]], inputs: List[List[Expr[Any]]])
 
+  def typesFromTuple[Ts: Type](using Quotes): List[Type[?]] =
+    Type.of[Ts] match
+      case '[t *: ts] => Type.of[t] :: typesFromTuple[ts]
+      case '[EmptyTuple] => Nil
+
+  def typesToTuple(list: List[Type[?]])(using Quotes): Type[?] = list match
+    case '[t] :: ts => typesToTuple(ts) match
+      case '[type ts <: Tuple; ts] => Type.of[t *: ts]
+    case _ => Type.of[EmptyTuple]
+
   def metadata[Op: Type](using Quotes): Metadata =
     import quotes.reflect.*
 
-    def extractMetass[Metadatas: Type]: List[List[Expr[Any]]] = Type.of[Metadatas] match
-      case '[m *: ms] => extractMetas[m] :: extractMetass[ms]
-      case '[EmptyTuple] => Nil
+    def extractMetass[Metadatas: Type]: List[List[Expr[Any]]] =
+      typesFromTuple[Metadatas].map:
+        case '[m] => extractMetas[m]
 
-    def extractMetas[Metadata: Type]: List[Expr[Any]] = Type.of[Metadata] match
-      case '[m *: ms] => extractMeta[m] :: extractMetas[ms]
-      case '[EmptyTuple] => Nil
-
-    def extractMeta[M: Type]: Expr[Any] = TypeRepr.of[M] match
-      case AnnotatedType(_, annot) =>
-        annot.asExpr
-      case tpe =>
-        report.errorAndAbort(s"got the metadata element ${tpe.show}")
+    def extractMetas[Metadata: Type]: List[Expr[Any]] =
+      typesFromTuple[Metadata].map:
+        case '[m] => TypeRepr.of[m] match
+          case AnnotatedType(_, annot) =>
+            annot.asExpr
+          case tpe =>
+            report.errorAndAbort(s"got the metadata element ${tpe.show}")
 
     Type.of[Op] match
       case '[Operation {
@@ -56,11 +67,6 @@ object OpsMirror:
 
   private def reifyImpl[T: Type](using Quotes): Expr[Of[T]] =
     import quotes.reflect.*
-
-    def toTuple(list: List[Type[?]]): Type[?] = list match
-      case '[t] :: ts => toTuple(ts) match
-        case '[type ts <: Tuple; ts] => Type.of[t *: ts]
-      case _ => Type.of[EmptyTuple]
 
     val tpe = TypeRepr.of[T]
     val cls = tpe.classSymbol.get
@@ -74,37 +80,49 @@ object OpsMirror:
         report.error(s"annotation ${annot.show} does not extend ${Type.show[MetaAnnotation]}", annot.pos)
         Type.of[Meta]
 
+    def decodeResult(res: Type[?]): (Type[?], Type[?]) = res match
+      case '[Either[e, o]] =>
+        (Type.of[e], Type.of[o])
+      case '[Right[e, o]] =>
+        (Type.of[e], Type.of[o])
+      case '[Left[e, o]] =>
+        (Type.of[e], Type.of[o])
+      case '[tpe] =>
+        (Type.of[VoidType], Type.of[tpe])
+
     val ops = decls.map(method =>
-      val meta = toTuple(method.annotations.map(encodeMeta))
-      val (inputTypes, inputLabels, inputMetas, output) =
+      val meta = typesToTuple(method.annotations.map(encodeMeta))
+      val (inputTypes, inputLabels, inputMetas, error, output) =
         tpe.memberType(method) match
           case ByNameType(res) =>
-            (Nil, Nil, Nil, res.asType)
+            val (error, output) = decodeResult(res.asType)
+            (Nil, Nil, Nil, error, output)
           case MethodType(paramNames, paramTpes, res) =>
             val inputTypes = paramTpes.map(_.asType)
             val inputLabels = paramNames.map(l => ConstantType(StringConstant(l)).asType)
-            val inputMetas = method.paramSymss.head.map(s => toTuple(s.annotations.map(encodeMeta)))
-            val output = res match
+            val inputMetas = method.paramSymss.head.map(s => typesToTuple(s.annotations.map(encodeMeta)))
+            val (error, output) = res match
               case _: MethodType => report.errorAndAbort(s"curried method ${method.name} is not supported")
               case _: PolyType => report.errorAndAbort(s"curried method ${method.name} is not supported")
-              case _ => res.asType
-            (inputTypes, inputLabels, inputMetas, output)
+              case _ => decodeResult(res.asType)
+            (inputTypes, inputLabels, inputMetas, error, output)
           case _: PolyType => report.errorAndAbort(s"generic method ${method.name} is not supported")
-      val inTup = toTuple(inputTypes)
-      val inLab = toTuple(inputLabels)
-      val inMet = toTuple(inputMetas)
-      (meta, inTup, inLab, inMet, output) match
-        case ('[m], '[i], '[l], '[iM], '[o]) => Type.of[Operation {
+      val inTup = typesToTuple(inputTypes)
+      val inLab = typesToTuple(inputLabels)
+      val inMet = typesToTuple(inputMetas)
+      (meta, inTup, inLab, inMet, error, output) match
+        case ('[m], '[i], '[l], '[iM], '[e], '[o]) => Type.of[Operation {
           type Metadata = m
           type InputTypes = i
           type InputLabels = l
           type InputMetadatas = iM
+          type ErrorType = e
           type OutputType = o
         }]
 
     )
-    val opsTup = toTuple(ops.toList)
-    val labelsTup = toTuple(labels.map(_.asType))
+    val opsTup = typesToTuple(ops.toList)
+    val labelsTup = typesToTuple(labels.map(_.asType))
     val name = ConstantType(StringConstant(cls.name)).asType
     (opsTup, labelsTup, name) match
       case ('[ops], '[labels], '[label]) => '{ (new OpsMirror {

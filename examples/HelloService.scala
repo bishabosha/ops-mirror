@@ -14,15 +14,11 @@ trait HelloService derives HttpService:
   @post("/greeting/{name}")
   def setGreeting(@path name: String, @body greeting: String): Unit
 
-  @get("/foo/{id}")
-  def foo(@path id: Int): String
+  @get("/roulette")
+  def roulette: Either[String, String]
 
-  @put("/year")
-  def getYear: Int
 
 @main def demo =
-  val mm = summon[mirrorops.OpsMirror.Of[HelloService]]
-
   val e = Endpoints.of[HelloService]
 
   e.model.routes.foreach((k, r) => println(s"$k: $r"))
@@ -33,11 +29,9 @@ trait HelloService derives HttpService:
     .addEndpoint:
       e.hello.handle(name => s"${greetings.getOrElse(name, "Hello")}, $name\n")
     .addEndpoint:
-      e.getYear.handle(() => 2021)
-    .addEndpoint:
-      e.foo.handle(id => s"foo $id * 71 = ${id * 71}\n")
-    .addEndpoint:
       e.setGreeting.handle((name, greeting) => greetings(name) = greeting)
+    .addEndpoint:
+      e.roulette.handle(() => Either.cond(scala.util.Random.nextBoolean(), "You win!", "fatal error: lost"))
     .create()
 
   sys.addShutdownHook(server.close())
