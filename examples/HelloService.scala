@@ -1,15 +1,23 @@
 package app
 
-import serverlib.*, source.*, method.*
+import serverlib.*
 
-trait HelloService derives Model:
+import HttpService.model.*, source.*, method.*
+import jdkhttp.Server.*
+
+import scala.collection.concurrent.TrieMap
+
+trait HelloService derives HttpService:
   @get("/hello/{name}")
   def hello(@path name: String): String
 
   @post("/greeting/{name}")
   def setGreeting(@path name: String, @body greeting: String): Unit
 
-  @post("/year")
+  @get("/foo/{id}")
+  def foo(@path id: Int): String
+
+  @put("/year")
   def getYear: Int
 
 @main def demo =
@@ -17,10 +25,21 @@ trait HelloService derives Model:
 
   val e = Endpoints.of[HelloService]
 
-  e.model.services.foreach((k, s) => println(s"$k: $s"))
+  e.model.routes.foreach((k, r) => println(s"$k: $r"))
 
-  e.hello.handle(name => s"Hello, $name")
-  e.getYear.handle(() => 2021)
-  e.setGreeting.handle((name, greeting) => println(s"$greeting, $name"))
+  val greetings = TrieMap.empty[String, String]
+
+  val server = ServerBuilder()
+    .addEndpoint:
+      e.hello.handle(name => s"${greetings.getOrElse(name, "Hello")}, $name\n")
+    .addEndpoint:
+      e.getYear.handle(() => 2021)
+    .addEndpoint:
+      e.foo.handle(id => s"foo $id * 71 = ${id * 71}\n")
+    .addEndpoint:
+      e.setGreeting.handle((name, greeting) => greetings(name) = greeting)
+    .create()
+
+  sys.addShutdownHook(server.close())
 
 
