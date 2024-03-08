@@ -18,6 +18,8 @@ sealed trait VoidType
 
 open class MetaAnnotation extends scala.annotation.RefiningAnnotation
 
+open class ErrorAnnotation[E] extends MetaAnnotation
+
 sealed trait Operation:
   type Metadata <: Tuple
   type InputTypes <: Tuple
@@ -73,39 +75,43 @@ object OpsMirror:
     val decls = cls.declaredMethods
     val labels = decls.map(m => ConstantType(StringConstant(m.name)))
 
-    def encodeMeta(annot: Term): Type[?] =
-      if annot.tpe <:< TypeRepr.of[MetaAnnotation] then
-        AnnotatedType(TypeRepr.of[Meta], annot).asType
+    def isMeta(annot: Term): Boolean =
+      if annot.tpe <:< TypeRepr.of[MetaAnnotation] then true
       else
         report.error(s"annotation ${annot.show} does not extend ${Type.show[MetaAnnotation]}", annot.pos)
-        Type.of[Meta]
+        false
 
-    def decodeResult(res: Type[?]): (Type[?], Type[?]) = res match
-      case '[Either[e, o]] =>
-        (Type.of[e], Type.of[o])
-      case '[Right[e, o]] =>
-        (Type.of[e], Type.of[o])
-      case '[Left[e, o]] =>
-        (Type.of[e], Type.of[o])
-      case '[tpe] =>
-        (Type.of[VoidType], Type.of[tpe])
+    def encodeMeta(annot: Term): Type[?] = AnnotatedType(TypeRepr.of[Meta], annot).asType
 
     val ops = decls.map(method =>
-      val meta = typesToTuple(method.annotations.map(encodeMeta))
-      val (inputTypes, inputLabels, inputMetas, error, output) =
+      val (error, metaAnnots) =
+        val annots = method.annotations.filter(isMeta)
+        val (errorAnnots, metaAnnots) = annots.partition(annot => annot.tpe <:< TypeRepr.of[ErrorAnnotation[?]])
+        val error =
+          if errorAnnots.isEmpty then
+            Type.of[VoidType]
+          else
+            errorAnnots
+              .map: annot =>
+                annot.asExpr match
+                  case '{ $a: ErrorAnnotation[t] } => Type.of[t]
+              .head
+        (error, metaAnnots.map(encodeMeta))
+      val meta = typesToTuple(metaAnnots)
+      val (inputTypes, inputLabels, inputMetas, output) =
         tpe.memberType(method) match
           case ByNameType(res) =>
-            val (error, output) = decodeResult(res.asType)
-            (Nil, Nil, Nil, error, output)
+            val output = res.asType
+            (Nil, Nil, Nil, output)
           case MethodType(paramNames, paramTpes, res) =>
             val inputTypes = paramTpes.map(_.asType)
             val inputLabels = paramNames.map(l => ConstantType(StringConstant(l)).asType)
-            val inputMetas = method.paramSymss.head.map(s => typesToTuple(s.annotations.map(encodeMeta)))
-            val (error, output) = res match
+            val inputMetas = method.paramSymss.head.map(s => typesToTuple(s.annotations.filter(isMeta).map(encodeMeta)))
+            val output = res match
               case _: MethodType => report.errorAndAbort(s"curried method ${method.name} is not supported")
               case _: PolyType => report.errorAndAbort(s"curried method ${method.name} is not supported")
-              case _ => decodeResult(res.asType)
-            (inputTypes, inputLabels, inputMetas, error, output)
+              case _ => res.asType
+            (inputTypes, inputLabels, inputMetas, output)
           case _: PolyType => report.errorAndAbort(s"generic method ${method.name} is not supported")
       val inTup = typesToTuple(inputTypes)
       val inLab = typesToTuple(inputLabels)

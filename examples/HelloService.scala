@@ -15,7 +15,8 @@ trait HelloService derives HttpService:
   def setGreeting(@path name: String, @body greeting: String): Unit
 
   @get("/roulette")
-  def roulette: Either[String, String]
+  @fail[Int]
+  def roulette: String
 
 
 @main def demo =
@@ -31,7 +32,7 @@ trait HelloService derives HttpService:
     .addEndpoint:
       e.setGreeting.handle((name, greeting) => greetings(name) = greeting)
     .addEndpoint:
-      e.roulette.handle(() => Either.cond(scala.util.Random.nextBoolean(), "You win!", "fatal error: lost"))
+      e.roulette.handle(() => Either.cond(scala.util.Random.nextBoolean(), "You win!", -99))
     .create()
 
   sys.addShutdownHook(server.close())
