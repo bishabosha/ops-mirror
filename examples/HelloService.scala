@@ -4,6 +4,7 @@ import serverlib.*
 
 import HttpService.model.*, source.*, method.*
 import jdkhttp.Server.*
+import jdkhttp.PartialRequest
 
 import scala.collection.concurrent.TrieMap
 
@@ -19,7 +20,7 @@ trait HelloService derives HttpService:
   def roulette: String
 
 
-@main def demo =
+@main def server =
   val e = Endpoints.of[HelloService]
 
   e.model.routes.foreach((k, r) => println(s"$k: $r"))
@@ -28,7 +29,7 @@ trait HelloService derives HttpService:
 
   val server = ServerBuilder()
     .addEndpoint:
-      e.hello.handle(name => s"${greetings.getOrElse(name, "Hello")}, $name\n")
+      e.hello.handle(name => s"${greetings.getOrElse(name, "Hello")}, $name")
     .addEndpoint:
       e.setGreeting.handle((name, greeting) => greetings(name) = greeting)
     .addEndpoint:
@@ -36,5 +37,36 @@ trait HelloService derives HttpService:
     .create()
 
   sys.addShutdownHook(server.close())
+
+@main def client(newGreeting: String) =
+  val e = Endpoints.of[HelloService]
+
+  val helloRequest = PartialRequest(e.hello, "http://localhost:8080")
+    .prepare("jamie")
+
+  val helloResponse = helloRequest.send()
+
+  println(s"helloResponse: $helloResponse")
+
+  val greetingRequest = PartialRequest(e.setGreeting, "http://localhost:8080")
+    .prepare("jamie", newGreeting)
+
+  val _ = greetingRequest.send()
+
+  println("greeting set")
+
+  val helloRequest2 = PartialRequest(e.hello, "http://localhost:8080")
+    .prepare("jamie")
+
+  val helloResponse2 = helloRequest2.send()
+
+  println(s"helloResponse2: $helloResponse2")
+
+  val rouletteRequest = PartialRequest(e.roulette, "http://localhost:8080")
+    .prepare()
+
+  val rouletteResponse = rouletteRequest.send()
+
+  println(s"rouletteResponse: $rouletteResponse")
 
 

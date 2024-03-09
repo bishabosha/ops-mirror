@@ -19,6 +19,19 @@ class Server private (private val internal: HttpServer) extends AutoCloseable:
 
 object Server:
 
+  enum UriParts:
+    case Exact(str: String)
+    case Wildcard(name: String)
+
+  def uriPattern(route: String): IndexedSeq[UriParts] =
+    assert(route.startsWith("/"))
+    val parts = route.split("/").view.drop(1)
+    assert(parts.forall(_.nonEmpty))
+    parts.toIndexedSeq.map {
+      case s if s.startsWith("{") && s.endsWith("}") => UriParts.Wildcard(s.slice(1, s.length - 1))
+      case s => UriParts.Exact(s)
+    }
+
   enum HttpMethod:
     case Get, Post, Put
 
@@ -55,7 +68,7 @@ object Server:
       def serialize(o: String): Result = Right(Some(o.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
 
     given Ser[Int] with
-      def serialize(o: Int): Result = Right(Some(o.toString.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+      def serialize(o: Int): Result = summon[Ser[String]].serialize(o.toString)
 
   trait Des[I]:
     def deserialize(str: String): I
@@ -117,31 +130,20 @@ object Server:
               h -> params
           .headOption
 
-      def readBody(): Array[Byte] =
+      def readBody(length: Int): Array[Byte] =
         // consume the full input stream
         val is = exchange.getRequestBody
-        try {
-          val bis = new java.io.BufferedInputStream(is)
-          try {
-            var initial = bis.available()
-            var buf = new Array[Byte](initial)
-            bis.read(buf)
-            var estimated = bis.available()
-            while estimated > 0 do
-              val newBuf = new Array[Byte](buf.length + estimated)
-              System.arraycopy(buf, 0, newBuf, 0, buf.length)
-              bis.read(newBuf, buf.length, estimated)
-              estimated = bis.available()
-              buf = newBuf
-            buf
-          } finally bis.close()
-        } finally is.close()
+        try
+          is.readAllBytes().ensuring(_.length == length, "read less bytes than expected")
+        finally
+          is.close()
 
       try handlerOpt match
         case None =>
           exchange.sendResponseHeaders(404, -1)
         case Some((handler, params)) =>
-          val body = readBody()
+          val length = Option(exchange.getRequestHeaders.getFirst("Content-Length")).map(_.toInt).getOrElse(0)
+          val body = readBody(length)
           val bodyStr = new String(body, java.nio.charset.StandardCharsets.UTF_8)
           println(s"matched ${uri} to handler ${handler.debug} with params ${params}\nbody: ${bodyStr}")
 
@@ -190,16 +192,7 @@ object Server:
       exchange(bundle, op)
 
     def uriHandle(route: String): UriHandler =
-      enum UriParts:
-        case Exact(str: String)
-        case Wildcard(name: String)
-      assert(route.startsWith("/"))
-      val parts = route.split("/").view.drop(1)
-      assert(parts.forall(_.nonEmpty))
-      val elems = parts.toIndexedSeq.map {
-        case s if s.startsWith("{") && s.endsWith("}") => UriParts.Wildcard(s.slice(1, s.length - 1))
-        case s => UriParts.Exact(s)
-      }
+      val elems = uriPattern(route)
       uri => optional:
         val uriElems = uri.split("/")
         val elemsIt = elems.iterator
