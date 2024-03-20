@@ -3,8 +3,6 @@ package app
 import serverlib.*
 
 import HttpService.model.*, source.*, method.*
-import jdkhttp.Server.*
-import jdkhttp.PartialRequest
 
 import scala.collection.concurrent.TrieMap
 
@@ -22,6 +20,9 @@ trait HelloService derives HttpService:
 
 
 @main def server =
+  import jdkhttp.Server.*
+  // import ziohttp.Server.*
+
   val e = Endpoints.of[HelloService]
 
   e.model.routes.foreach((k, r) => println(s"$k: $r"))
@@ -40,6 +41,8 @@ trait HelloService derives HttpService:
   sys.addShutdownHook(server.close())
 
 @main def client(newGreeting: String) =
+  import jdkhttp.PartialRequest
+
   val e = Endpoints.of[HelloService]
 
   val helloRequest = PartialRequest(e.hello, "http://localhost:8080")
@@ -69,5 +72,3 @@ trait HelloService derives HttpService:
   val rouletteResponse = rouletteRequest.send()
 
   println(s"rouletteResponse: $rouletteResponse")
-
-
