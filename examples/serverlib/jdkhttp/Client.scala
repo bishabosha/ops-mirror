@@ -29,7 +29,7 @@ class PartialRequest[I <: Tuple, E, O] private (
   private val uriParts: Seq[IArray[String] => String] =
     val uriParams: Map[String, Int] =
       e.inputs.zipWithIndex.collect({
-        case (Input(label, _, source.path()), i) => (label, i)
+        case (Input(label, source.path()), i) => (label, i)
       }).toMap
     Server.uriPattern(route).map({
       case Server.UriParts.Exact(str) => Function.const(str)

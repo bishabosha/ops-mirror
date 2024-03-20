@@ -6,16 +6,14 @@ import HttpService.model.*, source.*, method.*
 
 import scala.collection.concurrent.TrieMap
 
+
+@fail[Int]
 trait HelloService derives HttpService:
-  @get("/hello/{name}")
-  def hello(@path name: String): String
+  @get("/greet/{name}")
+  def greet(@path name: String): String
 
-  @post("/greeting/{name}")
+  @post("/greet/{name}")
   def setGreeting(@path name: String, @body greeting: String): Unit
-
-  @get("/roulette")
-  @fail[Int]
-  def roulette: String
 
 
 @main def server =
@@ -30,44 +28,30 @@ trait HelloService derives HttpService:
 
   val server = ServerBuilder()
     .addEndpoint:
-      e.hello.handle(name => s"${greetings.getOrElse(name, "Hello")}, $name")
+      e.greet.handle(name => Right(s"${greetings.getOrElse(name, "Hello")}, $name"))
     .addEndpoint:
-      e.setGreeting.handle((name, greeting) => greetings(name) = greeting)
-    .addEndpoint:
-      e.roulette.handle(() => Either.cond(scala.util.Random.nextBoolean(), "You win!", -99))
-    .create()
+      e.setGreeting.handle((name, greeting) => Right(greetings(name) = greeting))
+    .create(port = 8080)
 
   sys.addShutdownHook(server.close())
 
-@main def client(newGreeting: String) =
+@main def client(who: String, newGreeting: String) =
   import jdkhttp.PartialRequest
 
   val e = Endpoints.of[HelloService]
 
-  val helloRequest = PartialRequest(e.hello, "http://localhost:8080")
-    .prepare("jamie")
+  val greetRequest = PartialRequest(e.greet, "http://localhost:8080")
+    .prepare(who)
 
-  val helloResponse = helloRequest.send()
+  val setGreetingRequest = PartialRequest(e.setGreeting, "http://localhost:8080")
+    .prepare(who, newGreeting)
 
-  println(s"helloResponse: $helloResponse")
+  val greetRequest2 = PartialRequest(e.greet, "http://localhost:8080")
+    .prepare(who)
 
-  val greetingRequest = PartialRequest(e.setGreeting, "http://localhost:8080")
-    .prepare("jamie", newGreeting)
-
-  val _ = greetingRequest.send()
-
-  println("greeting set")
-
-  val helloRequest2 = PartialRequest(e.hello, "http://localhost:8080")
-    .prepare("jamie")
-
-  val helloResponse2 = helloRequest2.send()
-
-  println(s"helloResponse2: $helloResponse2")
-
-  val rouletteRequest = PartialRequest(e.roulette, "http://localhost:8080")
-    .prepare()
-
-  val rouletteResponse = rouletteRequest.send()
-
-  println(s"rouletteResponse: $rouletteResponse")
+  for
+    init    <- greetRequest.send()
+    _       <- setGreetingRequest.send()
+    updated <- greetRequest2.send()
+  do
+    println(s"greeting for $who was: $init, now is: $updated")

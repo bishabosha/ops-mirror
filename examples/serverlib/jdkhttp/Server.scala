@@ -168,7 +168,6 @@ object Server:
 
   class Handler[I <: Tuple, E, O](e: Endpoint[I, E, O], op: Func[I, E, O], exchange: Exchanger[I, E, O]):
     import serverlib.HttpService.model.*
-    import serverlib.HttpService.Tag
 
     type Bundler = (params: Map[String, String], body: String) => Bundle
     type BundleArg = (params: Map[String, String], body: String) => String
@@ -224,10 +223,10 @@ object Server:
       handlers += handler
       this
 
-    def create(): Server =
+    def create(port: Int): Server =
       val server = HttpServer.create()
       val handlers0 = handlers.toList
-      server.bind(new java.net.InetSocketAddress(8080), 0)
+      server.bind(new java.net.InetSocketAddress(port), 0)
       val _ = server.createContext("/", rootHandler(handlers0))
       server.setExecutor(Executors.newVirtualThreadPerTaskExecutor())
       server.start()

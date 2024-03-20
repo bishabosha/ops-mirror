@@ -7,10 +7,11 @@ import scala.annotation.implicitNotFound
 
 @implicitNotFound("No OpsMirror could be generated.\nDiagnose any issues by calling OpsMirror.reify[T] directly")
 sealed trait OpsMirror:
+  type Metadata <: Tuple
   type MirroredType
   type MirroredLabel
-  type MirroredOperations
-  type MirroredOperationLabels
+  type MirroredOperations <: Tuple
+  type MirroredOperationLabels <: Tuple
 
 sealed trait Meta
 
@@ -39,6 +40,16 @@ object OpsMirror:
     Type.of[Ts] match
       case '[t *: ts] => Type.of[t] :: typesFromTuple[ts]
       case '[EmptyTuple] => Nil
+
+  def stringsFromTuple[Ts: Type](using Quotes): List[String] =
+    typesFromTuple[Ts].map:
+      case '[t] => stringFromType[t]
+
+  def stringFromType[T: Type](using Quotes): String =
+    import quotes.reflect.*
+    TypeRepr.of[T] match
+      case ConstantType(StringConstant(label)) => label
+      case _ => report.errorAndAbort(s"expected a constant string, got ${TypeRepr.of[T]}")
 
   def typesToTuple(list: List[Type[?]])(using Quotes): Type[?] = list match
     case '[t] :: ts => typesToTuple(ts) match
@@ -83,20 +94,28 @@ object OpsMirror:
 
     def encodeMeta(annot: Term): Type[?] = AnnotatedType(TypeRepr.of[Meta], annot).asType
 
+    val (errorTpe, gmeta) =
+      val annots = cls.annotations.filter(isMeta)
+      val (errorAnnots, metaAnnots) = annots.partition(annot => annot.tpe <:< TypeRepr.of[ErrorAnnotation[?]])
+      val errorTpe =
+        if errorAnnots.isEmpty then
+          Type.of[VoidType]
+        else
+          errorAnnots
+            .map: annot =>
+              annot.asExpr match
+                case '{ $a: ErrorAnnotation[t] } => Type.of[t]
+            .head
+      (errorTpe, metaAnnots.map(encodeMeta))
+
     val ops = decls.map(method =>
-      val (error, metaAnnots) =
+      val metaAnnots =
         val annots = method.annotations.filter(isMeta)
         val (errorAnnots, metaAnnots) = annots.partition(annot => annot.tpe <:< TypeRepr.of[ErrorAnnotation[?]])
-        val error =
-          if errorAnnots.isEmpty then
-            Type.of[VoidType]
-          else
-            errorAnnots
-              .map: annot =>
-                annot.asExpr match
-                  case '{ $a: ErrorAnnotation[t] } => Type.of[t]
-              .head
-        (error, metaAnnots.map(encodeMeta))
+        if errorAnnots.nonEmpty then
+          errorAnnots.foreach: annot =>
+            report.error(s"error annotation ${annot.show} has no meaning on a method, annotate the scope itself.", annot.pos)
+        metaAnnots.map(encodeMeta)
       val meta = typesToTuple(metaAnnots)
       val (inputTypes, inputLabels, inputMetas, output) =
         tpe.memberType(method) match
@@ -116,7 +135,7 @@ object OpsMirror:
       val inTup = typesToTuple(inputTypes)
       val inLab = typesToTuple(inputLabels)
       val inMet = typesToTuple(inputMetas)
-      (meta, inTup, inLab, inMet, error, output) match
+      (meta, inTup, inLab, inMet, errorTpe, output) match
         case ('[m], '[i], '[l], '[iM], '[e], '[o]) => Type.of[Operation {
           type Metadata = m
           type InputTypes = i
@@ -127,11 +146,13 @@ object OpsMirror:
         }]
 
     )
+    val clsMeta = typesToTuple(gmeta)
     val opsTup = typesToTuple(ops.toList)
     val labelsTup = typesToTuple(labels.map(_.asType))
     val name = ConstantType(StringConstant(cls.name)).asType
-    (opsTup, labelsTup, name) match
-      case ('[ops], '[labels], '[label]) => '{ (new OpsMirror {
+    (clsMeta, opsTup, labelsTup, name) match
+      case ('[meta], '[ops], '[labels], '[label]) => '{ (new OpsMirror {
+        type Metadata = meta
         type MirroredType = T
         type MirroredLabel = label
         type MirroredOperations = ops
