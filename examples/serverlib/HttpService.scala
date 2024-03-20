@@ -4,7 +4,7 @@ import quoted.*
 import mirrorops.{OpsMirror, MetaAnnotation, ErrorAnnotation}
 
 trait HttpService[T]:
-  val routes: Map[String, HttpService.Route[?, ?, ?]]
+  val routes: Map[String, HttpService.Route]
 
 object HttpService:
   inline def derived[T](using m: OpsMirror.Of[T]): HttpService[T] = ${ ServerMacros.derivedImpl[T]('m) }
@@ -24,11 +24,5 @@ object HttpService:
       case query()
       case body()
 
-  case class Input(label: String, tpe: Tag[?], source: model.source)
-  case class Route[I, E, O](route: model.method, inputs: Seq[Input], error: Tag[?], output: Tag[?])
-
-  enum Tag[T]:
-    case String extends Tag[String]
-    case Unit extends Tag[Unit]
-    case Int extends Tag[Int]
-    case Empty extends Tag[Empty]
+  case class Input(label: String, source: model.source)
+  case class Route(route: model.method, inputs: Seq[Input])

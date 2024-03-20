@@ -168,7 +168,6 @@ object Server:
 
   class Handler[I <: Tuple, E, O](e: Endpoint[I, E, O], op: Func[I, E, O], exchange: Exchanger[I, E, O]):
     import serverlib.HttpService.model.*
-    import serverlib.HttpService.Tag
 
     type Bundler = (params: Map[String, String], body: String) => Bundle
     type BundleArg = (params: Map[String, String], body: String) => String

@@ -8,6 +8,8 @@ import jdkhttp.PartialRequest
 
 import scala.collection.concurrent.TrieMap
 
+
+@fail[Int]
 trait HelloService derives HttpService:
   @get("/hello/{name}")
   def hello(@path name: String): String
@@ -16,7 +18,6 @@ trait HelloService derives HttpService:
   def setGreeting(@path name: String, @body greeting: String): Unit
 
   @get("/roulette")
-  @fail[Int]
   def roulette: String
 
 
@@ -29,9 +30,9 @@ trait HelloService derives HttpService:
 
   val server = ServerBuilder()
     .addEndpoint:
-      e.hello.handle(name => s"${greetings.getOrElse(name, "Hello")}, $name")
+      e.hello.handle(name => Right(s"${greetings.getOrElse(name, "Hello")}, $name"))
     .addEndpoint:
-      e.setGreeting.handle((name, greeting) => greetings(name) = greeting)
+      e.setGreeting.handle((name, greeting) => Right(greetings(name) = greeting))
     .addEndpoint:
       e.roulette.handle(() => Either.cond(scala.util.Random.nextBoolean(), "You win!", -99))
     .create()
