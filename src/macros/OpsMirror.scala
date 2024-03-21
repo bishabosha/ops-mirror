@@ -76,6 +76,9 @@ object OpsMirror:
         type Metadata = metadata
         type InputMetadatas = inputMetadatas
       }] => Metadata(extractMetas[metadata], extractMetass[inputMetadatas])
+      case '[OpsMirror {
+        type Metadata = metadata
+      }] => Metadata(extractMetas[metadata], Nil)
       case _ => report.errorAndAbort("expected an Operation with Metadata.")
 
   private def reifyImpl[T: Type](using Quotes): Expr[Of[T]] =

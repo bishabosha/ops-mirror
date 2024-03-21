@@ -60,10 +60,11 @@ object ServerMacros:
           val labels = OpsMirror.stringsFromTuple[inputLabels]
           val ins =
             labels.lazyZip(metas.inputs).map((l, ms) =>
-              val method: Option[Expr[model.source]] = ms.collectFirst {
-                case '{ $p: model.source } => p
-              }
-              '{Input(${Expr(l)}, ${method.getOrElse(report.errorAndAbort(s"expected a valid source for param ${l}"))})}
+              val method: Expr[model.source] = ms
+                .collectFirst:
+                  case '{ $p: model.source } => p
+                .getOrElse(report.errorAndAbort(s"expected a valid source for param ${l}"))
+              '{Input(${Expr(l)}, $method)}
             )
             .pipe(Expr.ofSeq)
           ins
