@@ -30,4 +30,4 @@ object Server:
     def addEndpoint[I <: Tuple, E, O](handler: Handler[I, E, O]): ServerBuilder =
       new ServerBuilder // simulate adding an endpoint
 
-    def create() = ZIO.acquireRelease(ZIO.succeed(new Server))(_ => ZIO.unit)
+    def create(port: Int) = ZIO.acquireRelease(ZIO.succeed(new Server))(_ => ZIO.unit)
