@@ -9,6 +9,15 @@ trait HttpService[T]:
 object HttpService:
   inline def derived[T](using m: OpsMirror.Of[T]): HttpService[T] = ${ ServerMacros.derivedImpl[T]('m) }
 
+  transparent inline def endpoints[T](using m: HttpService[T], om: OpsMirror.Of[T]): Endpoints[T] =
+    ${ ServerMacros.decorateImpl[T]('m, 'om) }
+
+  final class Endpoints[T](val model: HttpService[T]) extends Selectable:
+    def selectDynamic(name: String): HttpService.Route = model.routes(name)
+
+  object Endpoints:
+    opaque type Endpoint[I, E, O] <: HttpService.Route = HttpService.Route
+
   sealed trait Empty
 
   object model:

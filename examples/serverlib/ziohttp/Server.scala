@@ -1,7 +1,7 @@
 package serverlib.ziohttp
 
-import serverlib.Endpoints.Endpoint
 import serverlib.HttpService.Empty
+import serverlib.HttpService.Endpoints.Endpoint
 
 import zio.IO
 import zio.UIO

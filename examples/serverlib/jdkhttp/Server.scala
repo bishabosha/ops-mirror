@@ -8,7 +8,7 @@ import java.util.concurrent.Executors
 import scala.collection.mutable.ListBuffer
 
 import serverlib.HttpService.Empty
-import serverlib.Endpoints.Endpoint
+import serverlib.HttpService.Endpoints.Endpoint
 import scala.util.TupledFunction
 
 import serverlib.util.optional

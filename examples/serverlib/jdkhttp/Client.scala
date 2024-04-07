@@ -7,7 +7,7 @@ import java.net.http.HttpClient.Redirect
 import java.net.http.HttpResponse
 import java.net.URI
 
-import serverlib.Endpoints.Endpoint
+import serverlib.HttpService.Endpoints.Endpoint
 import serverlib.HttpService.Empty
 import serverlib.HttpService.Input
 import serverlib.HttpService.model.source

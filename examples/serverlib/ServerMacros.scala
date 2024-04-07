@@ -6,9 +6,9 @@ import mirrorops.{OpsMirror, Operation, VoidType}
 import scala.util.chaining.given
 
 import HttpService.{Route, Input, model, Empty}
+import HttpService.Endpoints, Endpoints.Endpoint
 
 object ServerMacros:
-  import Endpoints.Endpoint
 
   type EncodeError[T] = T match
     case VoidType => Empty

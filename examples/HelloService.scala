@@ -5,7 +5,7 @@ import serverlib.*
 import HttpService.model.*, source.*, method.*
 
 import scala.collection.concurrent.TrieMap
-
+import syntax.*
 
 @fail[Int]
 trait HelloService derives HttpService:
@@ -20,7 +20,7 @@ trait HelloService derives HttpService:
   import jdkhttp.Server.*
   // import ziohttp.Server.*
 
-  val e = Endpoints.of[HelloService]
+  val e = HttpService.endpoints[HelloService]
 
   e.model.routes.foreach((k, r) => println(s"$k: $r"))
 
@@ -38,20 +38,29 @@ trait HelloService derives HttpService:
 @main def client(who: String, newGreeting: String) =
   import jdkhttp.PartialRequest
 
-  val e = Endpoints.of[HelloService]
+  val e = HttpService.endpoints[HelloService]
+  val baseURL = "http://localhost:8080"
 
-  val greetRequest = PartialRequest(e.greet, "http://localhost:8080")
+  val greetRequest = PartialRequest(e.greet, baseURL)
     .prepare(who)
 
-  val setGreetingRequest = PartialRequest(e.setGreeting, "http://localhost:8080")
+  val setGreetingRequest = PartialRequest(e.setGreeting, baseURL)
     .prepare(who, newGreeting)
 
-  val greetRequest2 = PartialRequest(e.greet, "http://localhost:8080")
-    .prepare(who)
-
-  for
-    init    <- greetRequest.send()
-    _       <- setGreetingRequest.send()
-    updated <- greetRequest2.send()
-  do
+  either:
+    val init = greetRequest.send().?
+    setGreetingRequest.send().?
+    val updated = greetRequest.send().?
     println(s"greeting for $who was: $init, now is: $updated")
+
+
+import scala.util.boundary, boundary.{Label, break}
+
+object syntax:
+  def either[A, B](op: Label[Left[A, Nothing]] ?=> B): Either[A, B] =
+    boundary[Either[A, B]]:
+      Right(op)
+
+  extension [A, B](e: Either[A, B]) def ?(using l: Label[Left[A, Nothing]]): B = e match
+    case Right(b) => b
+    case Left(a) => break(Left(a))
