@@ -88,6 +88,7 @@ object OpsMirror:
 
     def isMeta(annot: Term): Boolean =
       if annot.tpe <:< TypeRepr.of[MetaAnnotation] then true
+      else if annot.tpe <:< TypeRepr.of[scala.annotation.internal.SourceFile] then false
       else
         report.error(s"annotation ${annot.show} does not extend ${Type.show[MetaAnnotation]}", annot.pos)
         false

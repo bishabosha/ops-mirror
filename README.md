@@ -8,7 +8,7 @@ As an alternative to endpoint libraries, e.g. Tapir, endpoints4s, zio-http, how 
 
 ```scala
 @fail[Int]
-trait HelloService derives HttpService:
+trait GreetService derives HttpService:
   @get("/greet/{name}")
   def greet(@path name: String): String
 
@@ -20,7 +20,7 @@ then derive servers/clients as such:
 
 ```scala
 @main def server =
-  val e = Endpoints.of[HelloService]
+  val e = HttpService.endpoints[GreetService]
 
   val greetings = concurrent.TrieMap.empty[String, String]
 
@@ -34,7 +34,7 @@ then derive servers/clients as such:
 
 ```scala
 @main def client(name: String, newGreeting: String) =
-  val e = Endpoints.of[HelloService]
+  val e = HttpService.endpoints[GreetService]
 
   val greetRequest = PartialRequest(e.greet, "http://localhost:8080")
     .prepare(who)
@@ -42,13 +42,9 @@ then derive servers/clients as such:
   val setGreetingRequest = PartialRequest(e.setGreeting, "http://localhost:8080")
     .prepare(who, newGreeting)
 
-  val greetRequest2 = PartialRequest(e.greet, "http://localhost:8080")
-    .prepare(who)
-
-  for
-    init    <- greetRequest.send()
-    _       <- setGreetingRequest.send()
-    updated <- greetRequest2.send()
-  do
+  either:
+    val init = greetRequest.send().?
+    setGreetingRequest.send().?
+    val updated = greetRequest.send().?
     println(s"greeting for $who was: $init, now is: $updated")
 ```

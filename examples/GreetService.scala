@@ -6,9 +6,10 @@ import HttpService.model.*, source.*, method.*
 
 import scala.collection.concurrent.TrieMap
 import syntax.*
+import mirrorops.OpsMirror
 
 @fail[Int]
-trait HelloService derives HttpService:
+trait GreetService derives HttpService:
   @get("/greet/{name}")
   def greet(@path name: String): String
 
@@ -20,7 +21,7 @@ trait HelloService derives HttpService:
   import jdkhttp.Server.*
   // import ziohttp.Server.*
 
-  val e = HttpService.endpoints[HelloService]
+  val e = HttpService.endpoints[GreetService]
 
   e.model.routes.foreach((k, r) => println(s"$k: $r"))
 
@@ -38,7 +39,7 @@ trait HelloService derives HttpService:
 @main def client(who: String, newGreeting: String) =
   import jdkhttp.PartialRequest
 
-  val e = HttpService.endpoints[HelloService]
+  val e = HttpService.endpoints[GreetService]
   val baseURL = "http://localhost:8080"
 
   val greetRequest = PartialRequest(e.greet, baseURL)
