@@ -21,7 +21,7 @@ object Server:
     case Empty => UIO[O]
     case _ => IO[E, O]
 
-  extension [I <: Tuple, E, O](e: Endpoint[I, E, O])
+  extension [N, I <: Tuple, E, O](e: Endpoint[N, I, E, O])
     def handle(op: Func[I, E, O]): Handler[I, E, O] =
       Handler[I, E, O]()
 

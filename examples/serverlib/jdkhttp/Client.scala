@@ -16,7 +16,7 @@ import serverlib.HttpService.model.method
 import PartialRequest.{Request, Bundler, Func}
 
 class PartialRequest[I <: Tuple, E, O] private (
-    e: Endpoint[I, E, O], baseURI: String, builder: HttpRequest.Builder)(using Bundler[I, E, O]):
+    e: Endpoint[Any, I, E, O], baseURI: String, builder: HttpRequest.Builder):
 
   private val optBody: Option[IArray[String] => String] =
     e.inputs.view.map(_.source).zipWithIndex.collectFirst({ case (source.body(), i) => bundle => bundle(i) })
@@ -50,7 +50,7 @@ class PartialRequest[I <: Tuple, E, O] private (
     )
     Request(withBody.build())
 
-  val prepare: Func[I, Request[E, O]] = summon[Bundler[I, E, O]].bundle(this)
+  inline def prepare: Func[I, Request[E, O]] = summon[Bundler[I, E, O]].bundle(this)
 
 object PartialRequest:
 
@@ -86,7 +86,7 @@ object PartialRequest:
     case _ => Either[E, O]
 
   trait Bundler[I <: Tuple, E, O]:
-    def bundle(e: PartialRequest[I, E, O]): Func[I, Request[E, O]]
+    inline def bundle(e: PartialRequest[I, E, O]): Func[I, Request[E, O]]
 
   trait Des[T]:
     def deserialize(s: String): T
@@ -113,8 +113,8 @@ object PartialRequest:
       def serialize(i: Int): String = i.toString
 
   object Bundler:
-    inline given [I <: Tuple, E, O]: Bundler[I, E, O] = new Bundler[I, E, O]:
-      def bundle(req: PartialRequest[I, E, O]): Func[I, Request[E, O]] =
+    given [I <: Tuple, E, O]: Bundler[I, E, O] with
+      inline def bundle(req: PartialRequest[I, E, O]): Func[I, Request[E, O]] =
         inline compiletime.erasedValue[I] match
           case _: EmptyTuple => () =>
             req.handle(IArray.empty)
@@ -127,5 +127,5 @@ object PartialRequest:
             )
             req.handle(bundle)
 
-  def apply[I <: Tuple, E, O](e: Endpoint[I, E, O], baseURI: String)(using Bundler[I, E, O]): PartialRequest[I, E, O] =
+  def apply[N, I <: Tuple, E, O](e: Endpoint[N, I, E, O], baseURI: String)(using Bundler[I, E, O]): PartialRequest[I, E, O] =
     new PartialRequest(e, s"$baseURI/", HttpRequest.newBuilder())

@@ -6,7 +6,7 @@ import mirrorops.{OpsMirror, Operation, VoidType}
 import scala.util.chaining.given
 
 import HttpService.{Route, Input, model, Empty}
-import HttpService.Endpoints, Endpoints.Endpoint
+import HttpService.Endpoints, HttpService.Endpoints2, HttpService.EndpointsFinal, Endpoints.Endpoint
 
 object ServerMacros:
 
@@ -14,34 +14,81 @@ object ServerMacros:
     case VoidType => Empty
     case _ => T
 
-  def decorateImpl[T: Type](modelExpr: Expr[HttpService[T]], mirror: Expr[OpsMirror.Of[T]])(using Quotes): Expr[Endpoints[T]] =
+  // def labelsImpl[T: Type](mirror: Expr[OpsMirror.Of[T]])(using Quotes): Expr[List[String]] =
+  //   mirror match
+  //     case '{
+  //       $m: OpsMirror.Of[T] {
+  //         type MirroredOperationLabels = opLabels
+  //       }
+  //     } =>
+  //       Expr(OpsMirror.stringsFromTuple[opLabels])
+
+  // def decorateImpl[T: Type](modelExpr: Expr[HttpService[T]], mirror: Expr[OpsMirror.Of[T]])(using Quotes): Expr[Endpoints[T]] =
+  //   import quotes.reflect.*
+
+  //   def extractEndpoints[Ts: Type]: List[Type[?]] =
+  //     OpsMirror.typesFromTuple[Ts].map:
+  //       case '[op] => extractEndpoint[op]
+
+  //   def extractEndpoint[T: Type]: Type[?] = Type.of[T] match
+  //     case '[Operation { type InputTypes = inputTypes; type ErrorType = errorType; type OutputType = outputType }] =>
+  //       Type.of[Endpoint[inputTypes, EncodeError[errorType], outputType]]
+
+  //   val refinements = mirror match
+  //     case '{
+  //       $m: OpsMirror.Of[T] {
+  //         type MirroredOperations = mirroredOps
+  //         type MirroredOperationLabels = opLabels
+  //       }
+  //     } =>
+  //       val labels = OpsMirror.stringsFromTuple[opLabels]
+  //       labels.zip(extractEndpoints[mirroredOps]).foldLeft(Type.of[Endpoints[T]]: Type[?])({ (acc, p) =>
+  //         ((acc, p): @unchecked) match
+  //           case ('[acc], (l, '[e])) =>
+  //             Refinement(TypeRepr.of[acc], l, TypeRepr.of[e]).asType
+  //       })
+
+  //   refinements match
+  //     case '[resTpe] => '{ Endpoints($modelExpr).asInstanceOf[Endpoints[T] & resTpe] }
+  // end decorateImpl
+
+  def decorateImpl2[T: Type](modelExpr: Expr[HttpService[T]], mirror: Expr[OpsMirror.Of[T]])(using Quotes): Expr[Endpoints2[T]] =
     import quotes.reflect.*
 
-    def extractEndpoints[Ts: Type]: List[Type[?]] =
+    def extractEndpoints[Ts: Type]: List[Type[?] => Type[?]] =
       OpsMirror.typesFromTuple[Ts].map:
         case '[op] => extractEndpoint[op]
 
-    def extractEndpoint[T: Type]: Type[?] = Type.of[T] match
+    def extractEndpoint[T: Type]: Type[?] => Type[?] = Type.of[T] match
       case '[Operation { type InputTypes = inputTypes; type ErrorType = errorType; type OutputType = outputType }] =>
-        Type.of[Endpoint[inputTypes, EncodeError[errorType], outputType]]
+        tp => tp match
+          case '[label] =>
+            Type.of[Endpoint[label, inputTypes, EncodeError[errorType], outputType]]
 
     val refinements = mirror match
       case '{
+        type opLabels <: Tuple;
         $m: OpsMirror.Of[T] {
           type MirroredOperations = mirroredOps
-          type MirroredOperationLabels = opLabels
+          type MirroredOperationLabels = `opLabels`
         }
       } =>
-        val labels = OpsMirror.stringsFromTuple[opLabels]
-        labels.zip(extractEndpoints[mirroredOps]).foldLeft(Type.of[Endpoints[T]]: Type[?])({ (acc, p) =>
-          ((acc, p): @unchecked) match
-            case ('[acc], (l, '[e])) =>
-              Refinement(TypeRepr.of[acc], l, TypeRepr.of[e]).asType
-        })
+        val endpoints = OpsMirror.typesFromTuple[opLabels].lazyZip(extractEndpoints[mirroredOps]).map((l, f) => f(l))
+
+        OpsMirror.typesToTuple(endpoints) match
+          case '[type endpoints <: Tuple; endpoints] =>
+            Type.of[NamedTuple.NamedTuple[opLabels, endpoints]]
+
+        // val labels = OpsMirror.stringsFromTuple[opLabels]
+        // labels.zip(extractEndpoints[mirroredOps]).foldLeft(Type.of[Endpoints[T]]: Type[?])({ (acc, p) =>
+        //   ((acc, p): @unchecked) match
+        //     case ('[acc], (l, '[e])) =>
+        //       Refinement(TypeRepr.of[acc], l, TypeRepr.of[e]).asType
+        // })
 
     refinements match
-      case '[resTpe] => '{ Endpoints($modelExpr).asInstanceOf[Endpoints[T] & resTpe] }
-  end decorateImpl
+      case '[type resTpe <: NamedTuple.AnyNamedTuple; resTpe] => '{ EndpointsFinal[T, resTpe]($modelExpr) }
+  end decorateImpl2
 
 
   def derivedImpl[T: Type](mirror: Expr[OpsMirror.Of[T]])(using Quotes): Expr[HttpService[T]] =
@@ -87,7 +134,7 @@ object ServerMacros:
         labels.zip(extractServices[mirroredOps]).map((l, s) => '{(${Expr(l)}, $s)})
     ('{
       new HttpService[T] {
-        val routes = Map(${Varargs(serviceExprs)}*)
+        val routes = scala.collection.immutable.ListMap(${Varargs(serviceExprs)}*)
       }
     })
   end derivedImpl

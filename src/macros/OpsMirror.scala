@@ -32,6 +32,28 @@ sealed trait Operation:
 object OpsMirror:
   type Of[T] = OpsMirror { type MirroredType = T }
 
+
+  type OperationIns[Ins] = Operation {
+    type InputTypes = Ins
+  }
+
+  type OperationOut[T] = Operation {
+    type OutputType = T
+  }
+
+  type OperationErr[E] = Operation {
+    type ErrorType = E
+  }
+
+  type OpsMirrorNs[Names] = OpsMirror {
+    type MirroredOperationLabels = Names
+  }
+
+  type OpsMirrorOps[Ops] = OpsMirror {
+    type MirroredOperations = Ops
+  }
+
+
   transparent inline given reify[T]: Of[T] = ${ reifyImpl[T] }
 
   case class Metadata(base: List[Expr[Any]], inputs: List[List[Expr[Any]]])

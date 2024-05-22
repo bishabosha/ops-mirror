@@ -1,5 +1,7 @@
 package serverlib.jdkhttp
 
+import language.experimental.namedTuples
+
 import com.sun.net.httpserver.HttpHandler
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
@@ -8,11 +10,18 @@ import java.util.concurrent.Executors
 import scala.collection.mutable.ListBuffer
 
 import serverlib.HttpService.Empty
+import serverlib.HttpService.Endpoints2
 import serverlib.HttpService.Endpoints.Endpoint
 import scala.util.TupledFunction
 
+import scala.NamedTuple.AnyNamedTuple
+import scala.NamedTuple.NamedTuple
+
 import serverlib.util.optional
 import scala.collection.View.Empty
+import mirrorops.OpsMirror
+import serverlib.HttpService
+import serverlib.HttpService.Route
 
 class Server private (private val internal: HttpServer) extends AutoCloseable:
   def close(): Unit = internal.stop(0)
@@ -81,6 +90,7 @@ object Server:
       def deserialize(str: String): String = str
 
   object Exchanger:
+    @annotation.nowarn("msg=New anonymous class definition will be duplicated at each inline site")
     inline given [I <: Tuple, E, O](using Ser[Res[E, O]]): Exchanger[I, E, O] = new Exchanger[I, E, O]:
       def apply(bundle: Bundle, func: Func[I, E, O]): Ser.Result =
         val res =
@@ -98,11 +108,25 @@ object Server:
   trait Bundle:
     def arg(index: Int): String
 
-  extension [I <: Tuple, E, O](e: Endpoint[I, E, O])
-    def handle(op: Func[I, E, O])(using Exchanger[I, E, O]): Handler[I, E, O] =
-      Handler[I, E, O](e, op, summon[Exchanger[I, E, O]])
+  extension [N, I <: Tuple, E, O](e: Endpoint[N, I, E, O])
+    def handle(op: Func[I, E, O])(using Exchanger[I, E, O]): Handler[N, I, E, O] =
+      Handler[N, I, E, O](e, op, summon[Exchanger[I, E, O]])
 
-  private def rootHandler(handlers: List[Handler[?, ?, ?]]): HttpHandler =
+  type Handlers[I <: AnyNamedTuple] = Handlers0[NamedTuple.DropNames[I]]
+
+  type Handlers0[I <: Tuple] = Tuple.Map[I, [X] =>> X match {
+    case Endpoint[name, ins, err, out] => Handler[name, ins, err, out]
+  }]
+
+  // extension [I <: AnyNamedTuple, T](e: Endpoints2[T] { type Fields = I })
+  //   def handle(handlers: Handlers[e.type, I]) = handlers
+
+  // type Handler1[N, I <: Tuple, E, O] = Endpoint[N, I, E, O] ?=> Handler[I, E, O]
+
+  // def handle0[I <: Tuple, E, O](op: Func[I, E, O])(using Exchanger[I, E, O]): Handler1[I, E, O] =
+  //   e => Handler[I, E, O](e.asInstanceOf[Endpoint[I, E, O]], op, summon[Exchanger[I, E, O]])
+
+  private def rootHandler(handlers: List[Handler[?, ?, ?, ?]]): HttpHandler =
     val lazyHandlers = handlers.to(LazyList)
       .map: h =>
         val (method, uriHandler) = h.route
@@ -166,7 +190,7 @@ object Server:
       finally
         exchange.close()
 
-  class Handler[I <: Tuple, E, O](e: Endpoint[I, E, O], op: Func[I, E, O], exchange: Exchanger[I, E, O]):
+  class Handler[N, I <: Tuple, E, O](e: Endpoint[N, I, E, O], op: Func[I, E, O], exchange: Exchanger[I, E, O]):
     import serverlib.HttpService.model.*
 
     type Bundler = (params: Map[String, String], body: String) => Bundle
@@ -217,10 +241,12 @@ object Server:
       case method.put(route) => (HttpMethod.Put, uriHandle(route))
 
   class ServerBuilder():
-    private val handlers: ListBuffer[Handler[?, ?, ?]] = ListBuffer()
+    private val handlers: ListBuffer[Handler[?, ?, ?, ?]] = ListBuffer()
 
-    def addEndpoint[I <: Tuple, E, O](handler: Handler[I, E, O]): this.type =
-      handlers += handler
+    inline def addEndpoints[Service, I <: AnyNamedTuple](e: Endpoints2[Service] { type Fields = I })(impls: Handlers[I]): this.type =
+      val handles = impls.asInstanceOf[Product].productIterator.asInstanceOf[IterableOnce[Handler[?,?,?,?]]].iterator.toList
+      println(s"adding handles $handles")
+      handlers ++= handles
       this
 
     def create(port: Int): Server =
