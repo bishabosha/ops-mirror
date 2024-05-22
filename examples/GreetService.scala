@@ -1,5 +1,7 @@
 package app
 
+import language.experimental.namedTuples
+
 import serverlib.*
 
 import HttpService.model.*, source.*, method.*
@@ -17,6 +19,8 @@ trait GreetService derives HttpService:
   def setGreeting(@path name: String, @body greeting: String): Unit
 
 
+val e = HttpService.endpoints[GreetService]
+
 @main def server =
   import jdkhttp.Server.*
 
@@ -27,19 +31,19 @@ trait GreetService derives HttpService:
   val greetings = TrieMap.empty[String, String]
 
   val server = ServerBuilder()
-    .addEndpoint:
-      e.greet.handle(name => Right(s"${greetings.getOrElse(name, "Hello")}, $name"))
-    .addEndpoint:
-      e.setGreeting.handle((name, greeting) => Right(greetings(name) = greeting))
-    .create(port = 8080)
+    .addEndpoints(e):
+      (
+        e.greet.handle(name => Right(s"${greetings.getOrElse(name, "Hello")}, $name")),
+        e.setGreeting.handle((name, greeting) => Right(greetings(name) = greeting)),
+      )
+    .create(port = 8081)
 
   sys.addShutdownHook(server.close())
 
 @main def client(who: String, newGreeting: String) =
   import jdkhttp.PartialRequest
 
-  val e = HttpService.endpoints[GreetService]
-  val baseURL = "http://localhost:8080"
+  val baseURL = "http://localhost:8081"
 
   val greetRequest = PartialRequest(e.greet, baseURL)
     .prepare(who)
