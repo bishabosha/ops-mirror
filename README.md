@@ -51,3 +51,11 @@ end server
     println(s"greeting for $who was: $init, now is: $updated")
 end client
 ```
+
+## Publishing
+
+due to the way this project is structured, to publish you need to specify project.scala explicitly and src. This is the only way to ignore examples, but also include the code.
+
+```bash
+scala-cli --power publish local project.scala src
+```
