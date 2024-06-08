@@ -8,7 +8,7 @@ import scala.collection.concurrent.TrieMap
 import syntax.*
 import mirrorops.OpsMirror
 
-@fail[Int]
+@failsWith[Int]
 trait GreetService derives HttpService:
   @get("/greet/{name}")
   def greet(@path name: String): String

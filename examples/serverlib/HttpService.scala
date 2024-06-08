@@ -21,7 +21,7 @@ object HttpService:
   sealed trait Empty
 
   object model:
-    class fail[E] extends ErrorAnnotation[E]
+    class failsWith[E] extends ErrorAnnotation[E]
 
     enum method extends MetaAnnotation:
       case get(route: String)

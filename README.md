@@ -4,10 +4,12 @@ Answering the question of "what if my fancy endpoints were defined as a trait"
 
 ## Motivating example
 
+> The following code samples can be found and ran in the [examples](examples) directory.
+
 As an alternative to endpoint libraries, e.g. Tapir, endpoints4s, zio-http, how about a plain trait + annotations?
 
 ```scala
-@fail[Int]
+@failsWith[Int]
 trait GreetService derives HttpService:
   @get("/greet/{name}")
   def greet(@path name: String): String
@@ -19,9 +21,9 @@ trait GreetService derives HttpService:
 then derive servers/clients as such:
 
 ```scala
-@main def server =
-  val e = HttpService.endpoints[GreetService]
+val e = HttpService.endpoints[GreetService]
 
+@main def server =
   val greetings = concurrent.TrieMap.empty[String, String]
 
   val server = ServerBuilder()
@@ -30,12 +32,12 @@ then derive servers/clients as such:
     .addEndpoint:
       e.setGreeting.handle((name, greeting) => Right(greetings(name) = greeting))
     .create(port = 8080)
-```
 
-```scala
+  sys.addShutdownHook(server.close())
+end server
+    
 @main def client(name: String, newGreeting: String) =
-  val e = HttpService.endpoints[GreetService]
-
+  
   val greetRequest = PartialRequest(e.greet, "http://localhost:8080")
     .prepare(who)
 
@@ -47,4 +49,5 @@ then derive servers/clients as such:
     setGreetingRequest.send().?
     val updated = greetRequest.send().?
     println(s"greeting for $who was: $init, now is: $updated")
+end client
 ```
