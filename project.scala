@@ -4,3 +4,4 @@
 //> using publish.computeVersion git:tag
 //> using exclude "${.}/examples/*"
 //> using jvm 8
+//> using publish.repository central-s01
