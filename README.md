@@ -64,11 +64,12 @@ val e = HttpService.endpoints[GreetService]
 end server
     
 @main def client(name: String, newGreeting: String) =
+  val baseURL = "http://localhost:8080"
   
-  val greetRequest = PartialRequest(e.greet, "http://localhost:8080")
+  val greetRequest = PartialRequest(e.greet, baseURL)
     .prepare(who)
 
-  val setGreetingRequest = PartialRequest(e.setGreeting, "http://localhost:8080")
+  val setGreetingRequest = PartialRequest(e.setGreeting, baseURL)
     .prepare(who, newGreeting)
 
   either:
