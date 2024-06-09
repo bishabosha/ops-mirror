@@ -28,9 +28,13 @@ val e = HttpService.endpoints[GreetService]
 
   val server = ServerBuilder()
     .addEndpoint:
-      e.greet.handle(name => Right(s"${greetings.getOrElse(name, "Hello")}, $name"))
+      e.greet.handle: name =>
+        val greeting = greetings.getOrElse(name, "Hello")
+        Right(s"$greeting, $name")
     .addEndpoint:
-      e.setGreeting.handle((name, greeting) => Right(greetings(name) = greeting))
+      e.setGreeting.handle: (name, greeting) =>
+        greetings(name) = greeting
+        Right(())
     .create(port = 8080)
 
   sys.addShutdownHook(server.close())
