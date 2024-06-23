@@ -1,4 +1,4 @@
-//> using scala 3.4.2
+//> using scala 3.3.3
 //> using publish.organization io.github.bishabosha
 //> using publish.name ops-mirror
 //> using publish.computeVersion git:tag

@@ -19,7 +19,6 @@ trait GreetService derives HttpService:
 
 @main def server =
   import jdkhttp.Server.*
-  // import ziohttp.Server.*
 
   val e = HttpService.endpoints[GreetService]
 

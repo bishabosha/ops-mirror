@@ -75,7 +75,6 @@ object ServerMacros:
 
     val serviceExprs = mirror match
       case '{
-        type opLabels <: Tuple
         $m: OpsMirror.Of[T] {
           type MirroredOperations = mirroredOps
           type MirroredOperationLabels = opLabels
