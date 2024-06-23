@@ -7,7 +7,7 @@ Answering the question of "what if my fancy endpoints were defined as a trait"
 Use ops-mirror to help define the `derived` method of a Type-class. It provides a view (`mirrorops.OpsMirror`) over the methods of a trait. This is much more convenient to decompose with quotes/splices, or even match types, than the alternative of using the Reflection API (`scala.quoted.Quotes`).
 
 ```scala
-//> using dep io.github.bishabosha::ops-mirror::0.1.1
+//> using dep io.github.bishabosha::ops-mirror::0.1.2
 
 import mirrorops.OpsMirror
 
