@@ -1,4 +1,3 @@
-//> using scala 3.4.2
-//> using dep io.github.bishabosha::ops-mirror::0.1.1
-//> using dep "dev.zio::zio:2.0.21"
+//> using scala 3.3.3
+//> using dep io.github.bishabosha::ops-mirror::0.1.2-SNAPSHOT
 //> using jvm 21

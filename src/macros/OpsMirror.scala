@@ -51,10 +51,9 @@ object OpsMirror:
       case ConstantType(StringConstant(label)) => label
       case _ => report.errorAndAbort(s"expected a constant string, got ${TypeRepr.of[T]}")
 
-  def typesToTuple(list: List[Type[?]])(using Quotes): Type[?] = list match
-    case '[t] :: ts => typesToTuple(ts) match
-      case '[type ts <: Tuple; ts] => Type.of[t *: ts]
-    case _ => Type.of[EmptyTuple]
+  def typesToTuple(list: List[Type[?]])(using Quotes): Type[?] =
+    val empty: Type[? <: Tuple] = Type.of[EmptyTuple]
+    list.foldRight(empty)({case ('[t], '[acc]) => Type.of[t *: (acc & Tuple)]})
 
   def metadata[Op: Type](using Quotes): Metadata =
     import quotes.reflect.*
@@ -153,13 +152,13 @@ object OpsMirror:
     val name = ConstantType(StringConstant(cls.name)).asType
     (clsMeta, opsTup, labelsTup, name) match
       case ('[meta], '[ops], '[labels], '[label]) => '{ (new OpsMirror {
-        type Metadata = meta
+        type Metadata = meta & Tuple
         type MirroredType = T
         type MirroredLabel = label
-        type MirroredOperations = ops
-        type MirroredOperationLabels = labels
+        type MirroredOperations = ops & Tuple
+        type MirroredOperationLabels = labels & Tuple
       }): OpsMirror.Of[T] {
         type MirroredLabel = label
-        type MirroredOperations = ops
-        type MirroredOperationLabels = labels
+        type MirroredOperations = ops & Tuple
+        type MirroredOperationLabels = labels & Tuple
       }}
