@@ -1,10 +1,16 @@
 package serverlib
 
+import mirrorops.ErrorAnnotation
+import mirrorops.MetaAnnotation
+import mirrorops.Operation
+import mirrorops.OpsMirror
+import mirrorops.VoidType
+import serverlib.HttpService.Endpoints.Endpoint
+
 import scala.NamedTuple.AnyNamedTuple
 import scala.NamedTuple.NamedTuple
 
 import quoted.*
-import mirrorops.{OpsMirror, MetaAnnotation, ErrorAnnotation, Operation}
 
 trait HttpService[T]:
   val routes: Map[String, HttpService.Route]
@@ -12,43 +18,37 @@ trait HttpService[T]:
 object HttpService:
   import OpsMirror.*
 
-  type Fields[Ops <: OpsMirror, F[I <: Tuple, E, O]] <: AnyNamedTuple = (Ops, Ops) match
-    case (OpsMirrorNs[ns], OpsMirrorOps[ops]) =>
-      NamedTuple[ns, Fields1[ops, F]]
+  type Fields[N <: Tuple, O <: Tuple] =
+    NamedTuple[N, Tuple.Map[O, OpToEndpoint]]
 
-  type Fields1[Ops <: Tuple, F[I <: Tuple, E, O]] <: Tuple = Ops match
-    case EmptyTuple => EmptyTuple
-    case op *: ops => OpToEndpoint[op, F] *: Fields1[ops, F]
+  type EncodeError[T] = T match
+    case VoidType => Empty
+    case _        => T
 
-  type OpToEndpoint[Op <: Operation, F[I <: Tuple, E, O]] = Op match
-    case OperationIns[ins] => Op match
-      case OperationOut[out] => Op match
-        case OperationErr[err] => F[ins, ServerMacros.EncodeError[err], out]
+  type OpToEndpoint[Op] = Op match
+    case OperationIns[ins] =>
+      Op match
+        case OperationOut[out] =>
+          Op match
+            case OperationErr[err] => Endpoint[ins, EncodeError[err], out]
 
+  inline def derived[T](using m: OpsMirror.Of[T]): HttpService[T] = ${
+    ServerMacros.derivedImpl[T]('m)
+  }
 
-  inline def derived[T](using m: OpsMirror.Of[T]): HttpService[T] = ${ ServerMacros.derivedImpl[T]('m) }
+  def endpoints[T: {HttpService as m, OpsMirror.Of as om}]: Endpoints[T] {
+    type Fields = HttpService.Fields[om.MirroredOperationLabels, om.MirroredOperations]
+  } =
+    new Endpoints[T]:
+      type Fields = HttpService.Fields[om.MirroredOperationLabels, om.MirroredOperations]
+      def selectDynamic(name: String): HttpService.Route = m.routes(name)
 
-  // transparent inline def endpoints[T](using m: HttpService[T], om: OpsMirror.Of[T]): Endpoints[T] =
-  //   ${ ServerMacros.decorateImpl[T]('m, 'om) }
-
-  transparent inline def endpoints[T](using m: HttpService[T], om: OpsMirror.Of[T]): Endpoints2[T] =
-    ${ ServerMacros.decorateImpl2[T]('m, 'om) }
-
-  // transparent inline def labels[T](using om: OpsMirror.Of[T]): List[String] =
-  //   ${ ServerMacros.labelsImpl[T]('om) }
-
-  // final class Endpoints[T](val model: HttpService[T]) extends Selectable:
-  //   def selectDynamic(name: String): HttpService.Route = model.routes(name)
-
-  class Endpoints2[T](val model: HttpService[T]) extends Selectable:
+  trait Endpoints[T] extends Selectable:
     type Fields <: AnyNamedTuple
-    def selectDynamic(name: String): HttpService.Route = model.routes(name)
-
-  final class EndpointsFinal[T, Fs <: AnyNamedTuple](m: HttpService[T]) extends Endpoints2[T](m):
-    override type Fields = Fs
+    def selectDynamic(name: String): HttpService.Route
 
   object Endpoints:
-    opaque type Endpoint[+N, I, E, O] <: HttpService.Route = HttpService.Route
+    opaque type Endpoint[I, E, O] <: HttpService.Route = HttpService.Route
 
   sealed trait Empty
 
@@ -64,6 +64,8 @@ object HttpService:
       case path()
       case query()
       case body()
+  end model
 
   case class Input(label: String, source: model.source)
   case class Route(route: model.method, inputs: Seq[Input])
+end HttpService

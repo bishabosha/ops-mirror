@@ -36,7 +36,6 @@ end Operation
 object OpsMirror:
   type Of[T] = OpsMirror { type MirroredType = T }
 
-
   type OperationIns[Ins] = Operation {
     type InputTypes = Ins
   }
@@ -56,7 +55,6 @@ object OpsMirror:
   type OpsMirrorOps[Ops] = OpsMirror {
     type MirroredOperations = Ops
   }
-
 
   transparent inline given reify[T]: Of[T] = ${ reifyImpl[T] }
 
